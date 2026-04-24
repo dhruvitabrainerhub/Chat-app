@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatApp — Dashboard</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        min-height: 100vh;
+      }
+      header {
+        background: #16213e;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 2px solid #0f3460;
+      }
+      header .logo { font-size: 24px; }
+      header h1 { font-size: 18px; color: #fff; font-weight: 700; }
+      header .user-info { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+      header .user-info span { font-size: 13px; color: #a0a0b0; }
+      .logout-btn {
+        padding: 6px 14px;
+        background: rgba(233,69,96,0.2);
+        border: 1px solid #e94560;
+        border-radius: 8px;
+        color: #e94560;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .container { max-width: 900px; margin: 30px auto; padding: 0 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .panel {
+        background: #16213e;
+        border: 1px solid #0f3460;
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .panel-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #0f3460;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .panel-header h2 { font-size: 15px; color: #fff; }
+      .badge {
+        background: #e94560;
+        color: #fff;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-weight: 700;
+      }
+      .panel-body { padding: 12px; max-height: 420px; overflow-y: auto; }
+      .panel-body::-webkit-scrollbar { width: 4px; }
+      .panel-body::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 10px; }
+      .user-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        transition: background 0.2s;
+        margin-bottom: 4px;
+      }
+      .user-item:hover { background: #1a1a2e; }
+      .avatar {
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 700; font-size: 16px; color: #fff; flex-shrink: 0;
+      }
+      .user-name { font-size: 14px; color: #fff; font-weight: 500; flex: 1; }
+      .user-status { font-size: 11px; color: #6b7280; }
+      .action-btn {
+        padding: 6px 14px;
+        border: none;
+        border-radius: 8px;
+        font-size: 12px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: opacity 0.2s;
+      }
+      .action-btn:hover { opacity: 0.85; }
+      .btn-request { background: linear-gradient(135deg, #e94560, #c0392b); color: #fff; }
+      .btn-chat { background: linear-gradient(135deg, #0f3460, #533483); color: #fff; }
+      .btn-accept { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; }
+      .btn-reject { background: rgba(233,69,96,0.2); color: #e94560; border: 1px solid #e94560; }
+      .btn-sent { background: #1a1a2e; color: #6b7280; border: 1px solid #0f3460; cursor: default; }
+      .empty { text-align: center; padding: 30px; color: #3a3a5c; font-size: 13px; }
+      .tabs { display: flex; gap: 4px; padding: 12px 12px 0; }
+      .tab-btn {
+        padding: 7px 16px;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        background: #1a1a2e;
+        color: #6b7280;
+        transition: all 0.2s;
+      }
+      .tab-btn.active { background: linear-gradient(135deg, #e94560, #0f3460); color: #fff; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo">💬</div>
+      <h1>ChatApp</h1>
+      <div class="user-info">
+        <span>👤 <strong id="me-name"></strong></span>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- Left: Users & Friends -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>People</h2>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn active" onclick="showTab('all')">All Users</button>
+          <button class="tab-btn" onclick="showTab('friends')">Friends</button>
+        </div>
+        <div class="panel-body" id="users-list"></div>
+      </div>
+
+      <!-- Right: Friend Requests -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Friend Requests</h2>
+          <span class="badge" id="req-count">0</span>
+        </div>
+        <div class="panel-body" id="requests-list"></div>
+      </div>
+    </div>
+
+    <script>
+      const token = localStorage.getItem("token");
+      if (!token) window.location.href = "/";
+
+      const colors = ["#e94560","#0f3460","#533483","#2196f3","#ff9800","#009688"];
+      const colorMap = {};
+      function getColor(name) {
+        if (!colorMap[name]) colorMap[name] = colors[Object.keys(colorMap).length % colors.length];
+        return colorMap[name];
+      }
+
+      document.getElementById("me-name").textContent = localStorage.getItem("username") || "";
+
+      let currentTab = "all";
+      let sentRequests = new Set();
+
+      function showTab(tab) {
+        currentTab = tab;
+        document.querySelectorAll(".tab-btn").forEach((b, i) => {
+          b.classList.toggle("active", (i === 0 && tab === "all") || (i === 1 && tab === "friends"));
+        });
+        tab === "all" ? loadUsers() : loadFriends();
+      }
+
+      async function loadUsers() {
+        const res = await fetch(`/api/users/?token=${token}`);
+        const users = await res.json();
+        const reqRes = await fetch(`/api/users/requests?token=${token}`);
+        const reqs = await reqRes.json();
+        const pendingFromMe = reqs.filter(r => r.sender_id !== parseInt(getMyId())).map(r => r.sender_id);
+
+        const list = document.getElementById("users-list");
+        if (!users.length) { list.innerHTML = '<div class="empty">No other users yet</div>'; return; }
+
+        list.innerHTML = users.map(u => {
+          const isSent = sentRequests.has(u.id);
+          return `
+          <div class="user-item">
+            <div class="avatar" style="background:${getColor(u.username)}">${u.username[0].toUpperCase()}</div>
+            <div>
+              <div class="user-name">${u.username}</div>
+            </div>
+            ${isSent
+              ? `<button class="action-btn btn-sent">Sent ✓</button>`
+              : `<button class="action-btn btn-request" onclick="sendRequest(${u.id}, this)">Add Friend</button>`
+            }
+          </div>`;
+        }).join("");
+      }
+
+      async function loadFriends() {
+        const res = await fetch(`/api/users/friends?token=${token}`);
+        const friends = await res.json();
+        const list = document.getElementById("users-list");
+        if (!friends.length) { list.innerHTML = '<div class="empty">No friends yet. Send requests!</div>'; return; }
+        list.innerHTML = friends.map(u => `
+          <div class="user-item">
+            <div class="avatar" style="background:${getColor(u.username)}">${u.username[0].toUpperCase()}</div>
+            <div>
+              <div class="user-name">${u.username}</div>
+              <div class="user-status">Friend</div>
+            </div>
+            <button class="action-btn btn-chat" onclick="openChat(${u.id}, '${u.username}')">Chat</button>
+          </div>`).join("");
+      }
+
+      async function loadRequests() {
+        const res = await fetch(`/api/users/requests?token=${token}`);
+        const reqs = await res.json();
+        document.getElementById("req-count").textContent = reqs.length;
+        const list = document.getElementById("requests-list");
+        if (!reqs.length) { list.innerHTML = '<div class="empty">No pending requests</div>'; return; }
+        list.innerHTML = reqs.map(r => `
+          <div class="user-item" id="req-${r.id}">
+            <div class="avatar" style="background:${getColor(r.sender.username)}">${r.sender.username[0].toUpperCase()}</div>
+            <div style="flex:1">
+              <div class="user-name">${r.sender.username}</div>
+              <div class="user-status">wants to be friends</div>
+            </div>
+            <button class="action-btn btn-accept" onclick="respond(${r.id}, 'accepted')">✓</button>
+            <button class="action-btn btn-reject" onclick="respond(${r.id}, 'rejected')" style="margin-left:6px">✗</button>
+          </div>`).join("");
+      }
+
+      async function sendRequest(userId, btn) {
+        const res = await fetch(`/api/users/request/${userId}?token=${token}`, { method: "POST" });
+        if (res.ok) {
+          sentRequests.add(userId);
+          btn.className = "action-btn btn-sent";
+          btn.textContent = "Sent ✓";
+          btn.onclick = null;
+        }
+      }
+
+      async function respond(reqId, action) {
+        const res = await fetch(`/api/users/request/${reqId}/respond?action=${action}&token=${token}`, { method: "POST" });
+        if (res.ok) {
+          document.getElementById(`req-${reqId}`)?.remove();
+          loadRequests();
+          if (action === "accepted") loadFriends();
+        }
+      }
+
+      function openChat(friendId, friendName) {
+        localStorage.setItem("chatFriendId", friendId);
+        localStorage.setItem("chatFriendName", friendName);
+        window.location.href = "/chat.html";
+      }
+
+      function getMyId() {
+        try {
+          const token = localStorage.getItem("token");
+          return JSON.parse(atob(token.split(".")[1])).sub;
+        } catch { return null; }
+      }
+
+      function logout() {
+        localStorage.clear();
+        window.location.href = "/";
+      }
+
+      loadUsers();
+      loadRequests();
+      setInterval(loadRequests, 5000);
+    </script>
+  </body>
+</html>
