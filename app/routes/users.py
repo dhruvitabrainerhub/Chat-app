@@ -82,6 +82,18 @@ def respond_request(
     return req
 
 
+@router.get("/sent-requests", response_model=List[FriendRequestOut])
+def get_sent_requests(token: str, db: Session = Depends(get_db)) -> List[FriendRequest]:
+    me = get_current_user(token, db)
+    return (
+        db.query(FriendRequest)
+        .filter(
+            FriendRequest.sender_id == me.id, FriendRequest.status == "pending"
+        )
+        .all()
+    )
+
+
 @router.get("/friends", response_model=List[UserOut])
 def get_friends(token: str, db: Session = Depends(get_db)) -> List[User]:
     me = get_current_user(token, db)

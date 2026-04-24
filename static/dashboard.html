@@ -154,62 +154,99 @@
       document.getElementById("me-name").textContent = localStorage.getItem("username") || "";
 
       let currentTab = "all";
-      let sentRequests = new Set();
+      // Global state
+      let friendIds = new Set();       // accepted friends
+      let sentRequestIds = new Set();  // users I sent request to
+      let pendingRequestIds = new Set(); // users who sent me request
+
+      function getMyId() {
+        try { return parseInt(JSON.parse(atob(token.split(".")[1])).sub); }
+        catch { return null; }
+      }
+
+      // Load all state at once
+      async function loadState() {
+        const [friendsRes, sentRes, incomingRes] = await Promise.all([
+          fetch(`/api/users/friends?token=${token}`),
+          fetch(`/api/users/sent-requests?token=${token}`),
+          fetch(`/api/users/requests?token=${token}`),
+        ]);
+        const friends = await friendsRes.json();
+        const sent = await sentRes.json();
+        const incoming = await incomingRes.json();
+
+        friendIds = new Set(friends.map(f => f.id));
+        sentRequestIds = new Set(sent.map(r => r.receiver_id));
+        pendingRequestIds = new Set(incoming.map(r => r.sender_id));
+
+        // Update badge
+        document.getElementById("req-count").textContent = incoming.length;
+
+        // Render requests panel
+        renderRequests(incoming);
+
+        // Re-render current tab
+        if (currentTab === "all") await loadUsers();
+        else renderFriendsList(friends);
+      }
 
       function showTab(tab) {
         currentTab = tab;
         document.querySelectorAll(".tab-btn").forEach((b, i) => {
           b.classList.toggle("active", (i === 0 && tab === "all") || (i === 1 && tab === "friends"));
         });
-        tab === "all" ? loadUsers() : loadFriends();
+        loadState();
       }
 
       async function loadUsers() {
         const res = await fetch(`/api/users/?token=${token}`);
         const users = await res.json();
-        const reqRes = await fetch(`/api/users/requests?token=${token}`);
-        const reqs = await reqRes.json();
-        const pendingFromMe = reqs.filter(r => r.sender_id !== parseInt(getMyId())).map(r => r.sender_id);
-
         const list = document.getElementById("users-list");
         if (!users.length) { list.innerHTML = '<div class="empty">No other users yet</div>'; return; }
 
         list.innerHTML = users.map(u => {
-          const isSent = sentRequests.has(u.id);
+          const isFriend = friendIds.has(u.id);
+          const isSent = sentRequestIds.has(u.id);
+          const isPending = pendingRequestIds.has(u.id); // they sent me request
+
+          let btn = "";
+          if (isFriend) {
+            btn = `<button class="action-btn btn-chat" onclick="openChat(${u.id}, '${u.username}')">💬 Chat</button>`;
+          } else if (isSent) {
+            btn = `<button class="action-btn btn-sent" disabled>Sent ✓</button>`;
+          } else if (isPending) {
+            btn = `<button class="action-btn btn-sent" disabled>Requested you</button>`;
+          } else {
+            btn = `<button class="action-btn btn-request" onclick="sendRequest(${u.id}, this)">Add Friend</button>`;
+          }
+
           return `
           <div class="user-item">
             <div class="avatar" style="background:${getColor(u.username)}">${u.username[0].toUpperCase()}</div>
-            <div>
+            <div style="flex:1">
               <div class="user-name">${u.username}</div>
+              <div class="user-status">${isFriend ? "✅ Friend" : ""}</div>
             </div>
-            ${isSent
-              ? `<button class="action-btn btn-sent">Sent ✓</button>`
-              : `<button class="action-btn btn-request" onclick="sendRequest(${u.id}, this)">Add Friend</button>`
-            }
+            ${btn}
           </div>`;
         }).join("");
       }
 
-      async function loadFriends() {
-        const res = await fetch(`/api/users/friends?token=${token}`);
-        const friends = await res.json();
+      function renderFriendsList(friends) {
         const list = document.getElementById("users-list");
         if (!friends.length) { list.innerHTML = '<div class="empty">No friends yet. Send requests!</div>'; return; }
         list.innerHTML = friends.map(u => `
           <div class="user-item">
             <div class="avatar" style="background:${getColor(u.username)}">${u.username[0].toUpperCase()}</div>
-            <div>
+            <div style="flex:1">
               <div class="user-name">${u.username}</div>
-              <div class="user-status">Friend</div>
+              <div class="user-status">✅ Friend</div>
             </div>
-            <button class="action-btn btn-chat" onclick="openChat(${u.id}, '${u.username}')">Chat</button>
+            <button class="action-btn btn-chat" onclick="openChat(${u.id}, '${u.username}')">💬 Chat</button>
           </div>`).join("");
       }
 
-      async function loadRequests() {
-        const res = await fetch(`/api/users/requests?token=${token}`);
-        const reqs = await res.json();
-        document.getElementById("req-count").textContent = reqs.length;
+      function renderRequests(reqs) {
         const list = document.getElementById("requests-list");
         if (!reqs.length) { list.innerHTML = '<div class="empty">No pending requests</div>'; return; }
         list.innerHTML = reqs.map(r => `
@@ -219,7 +256,7 @@
               <div class="user-name">${r.sender.username}</div>
               <div class="user-status">wants to be friends</div>
             </div>
-            <button class="action-btn btn-accept" onclick="respond(${r.id}, 'accepted')">✓</button>
+            <button class="action-btn btn-accept" onclick="respond(${r.id}, 'accepted')">✓ Accept</button>
             <button class="action-btn btn-reject" onclick="respond(${r.id}, 'rejected')" style="margin-left:6px">✗</button>
           </div>`).join("");
       }
@@ -227,9 +264,10 @@
       async function sendRequest(userId, btn) {
         const res = await fetch(`/api/users/request/${userId}?token=${token}`, { method: "POST" });
         if (res.ok) {
-          sentRequests.add(userId);
+          sentRequestIds.add(userId);
           btn.className = "action-btn btn-sent";
           btn.textContent = "Sent ✓";
+          btn.disabled = true;
           btn.onclick = null;
         }
       }
@@ -237,9 +275,10 @@
       async function respond(reqId, action) {
         const res = await fetch(`/api/users/request/${reqId}/respond?action=${action}&token=${token}`, { method: "POST" });
         if (res.ok) {
-          document.getElementById(`req-${reqId}`)?.remove();
-          loadRequests();
-          if (action === "accepted") loadFriends();
+          // Reload full state — friends list + requests update together
+          await loadState();
+          // If accepted, switch to friends tab
+          if (action === "accepted") showTab("friends");
         }
       }
 
@@ -249,21 +288,13 @@
         window.location.href = "/chat.html";
       }
 
-      function getMyId() {
-        try {
-          const token = localStorage.getItem("token");
-          return JSON.parse(atob(token.split(".")[1])).sub;
-        } catch { return null; }
-      }
-
       function logout() {
         localStorage.clear();
         window.location.href = "/";
       }
 
-      loadUsers();
-      loadRequests();
-      setInterval(loadRequests, 5000);
+      loadState();
+      setInterval(loadState, 5000);
     </script>
   </body>
 </html>
